@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SKW GPS 追蹤系統 - 步數與方向增強版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #0f172a; color: #f8fafc; overflow-x: hidden; }
+        .radar-sweep {
+            background: conic-gradient(from 0deg, rgba(34, 197, 94, 0.4) 0deg, transparent 90deg);
+            animation: sweep 3s linear infinite;
+        }
+        @keyframes sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .hidden-sign { filter: blur(45px); opacity: 0.1; transform: scale(0.8); }
+        .skw-gold { color: #fbbf24; }
+        .checkpoint-card { background: rgba(30, 41, 59, 0.8); border-left: 4px solid #fbbf24; transition: all 0.2s; }
+        #authModal { background: rgba(15, 23, 42, 0.98); backdrop-filter: blur(10px); }
+        canvas { image-rendering: pixelated; }
+        .dir-btn.active { background-color: #fbbf24; color: #0f172a; border-color: #fbbf24; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col p-4">
+
+    <!-- 頂部標籤 -->
+    <div class="max-w-md mx-auto w-full mb-4 flex justify-between items-center">
+        <div>
+            <h1 class="text-xl font-black skw-gold italic tracking-tighter">SKW TRACKING</h1>
+            <p id="modeIndicator" class="text-[9px] text-blue-400 font-bold uppercase tracking-widest">Scout Mode: active</p>
+        </div>
+        <button onclick="requestLeaderAccess()" class="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700 shadow-xl active:scale-90 transition-all">
+            <span id="lockIcon">🔒</span>
+        </button>
+    </div>
+
+    <!-- 1. 隊員模式介面 -->
+    <div id="scoutMode" class="max-w-md mx-auto w-full space-y-4">
+        <div class="bg-slate-800 rounded-3xl p-6 shadow-2xl border border-slate-700 relative overflow-hidden">
+            <div class="flex justify-between items-start mb-4 relative z-10">
+                <div>
+                    <span class="text-[10px] font-bold text-slate-500 block uppercase tracking-widest">目標距離</span>
+                    <span id="distDisplay" class="text-4xl font-black font-mono text-white tracking-tighter">---</span>
+                </div>
+                <div class="text-right">
+                    <span class="text-[10px] font-bold text-slate-500 block uppercase tracking-widest">完成進度</span>
+                    <span id="progressText" class="text-xl font-bold skw-gold italic">0 / 0</span>
+                </div>
+            </div>
+
+            <div class="w-20 h-20 mx-auto rounded-full border border-green-500/20 relative flex items-center justify-center mb-4">
+                <div class="absolute inset-0 radar-sweep rounded-full"></div>
+                <div class="w-2 h-2 bg-green-500 rounded-full animate-ping"></div>
+            </div>
+
+            <div class="text-center relative z-10">
+                <p id="hintText" class="text-sm text-blue-300 font-medium italic">請啟動偵測並前往下一個點</p>
+            </div>
+        </div>
+
+        <!-- 符號顯示區 -->
+        <div class="relative h-[340px]">
+            <div id="lockOverlay" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl rounded-3xl border-2 border-dashed border-slate-800 transition-all duration-700">
+                <span class="text-4xl mb-4 grayscale">📡</span>
+                <span class="text-xs font-bold tracking-[0.2em] text-slate-500 uppercase">等待進入目標範圍</span>
+                <p class="text-[10px] text-slate-600 mt-2">進入 15 米內將解鎖號誌</p>
+            </div>
+            <div class="bg-[#4a3728] h-full rounded-3xl overflow-hidden shadow-2xl border-4 border-slate-700 flex items-center justify-center">
+                <canvas id="signCanvas" width="600" height="600" class="w-full h-full hidden-sign transition-all duration-1000"></canvas>
+            </div>
+        </div>
+        
+        <button id="startGpsBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl shadow-xl transition-all uppercase tracking-widest">
+            啟動定位感應器
+        </button>
+    </div>
+
+    <!-- 2. 領袖佈置模式介面 -->
+    <div id="leaderMode" class="max-w-md mx-auto w-full space-y-4 hidden">
+        <div class="bg-slate-800 rounded-3xl p-6 border border-yellow-500/40 shadow-2xl">
+            <h2 class="text-lg font-black skw-gold italic mb-4">📍 現場信號部署</h2>
+            
+            <div class="space-y-4">
+                <div class="bg-slate-900/50 p-4 rounded-xl border border-slate-700">
+                    <label class="text-[10px] font-black text-slate-500 block mb-3 uppercase tracking-widest">選擇投放號誌</label>
+                    <div class="grid grid-cols-2 gap-2 mb-4" id="signSelectorGrid"></div>
+                    
+                    <!-- 步數與方向自定義區域 -->
+                    <div id="stepExtraArea" class="hidden space-y-3 pt-2 border-t border-slate-700">
+                        <div>
+                            <label class="text-[10px] font-black text-yellow-500 block mb-2 uppercase tracking-widest">設定步數 (Steps)</label>
+                            <input type="number" id="stepCount" value="20" class="w-full bg-slate-800 border border-slate-600 p-3 rounded-xl text-white outline-none">
+                        </div>
+                        <div>
+                            <label class="text-[10px] font-black text-yellow-500 block mb-2 uppercase tracking-widest">指引方向 (Direction)</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button onclick="setStepDir('left')" id="dir-left" class="dir-btn py-2 border border-slate-600 rounded-lg text-xs font-bold">向左</button>
+                                <button onclick="setStepDir('straight')" id="dir-straight" class="dir-btn active py-2 border border-slate-600 rounded-lg text-xs font-bold">向前</button>
+                                <button onclick="setStepDir('right')" id="dir-right" class="dir-btn py-2 border border-slate-600 rounded-lg text-xs font-bold">向右</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button onclick="deployAtCurrentPos()" class="w-full bg-yellow-500 hover:bg-yellow-400 text-slate-900 font-black py-4 rounded-2xl shadow-xl transition-all transform active:scale-95">
+                    ✨ 在此定點投放信號
+                </button>
+                <button onclick="exitLeaderMode()" class="w-full text-[11px] text-slate-500 font-bold uppercase tracking-widest py-2">鎖定並返回隊員模式</button>
+            </div>
+        </div>
+
+        <div class="space-y-3">
+            <div class="flex justify-between items-center px-2">
+                <h3 class="text-xs font-black text-slate-500 uppercase tracking-widest">任務路徑列表</h3>
+                <button onclick="clearAllMissions()" class="text-[10px] text-red-500 font-bold underline">全部刪除</button>
+            </div>
+            <div id="missionList" class="space-y-2 pb-20"></div>
+        </div>
+    </div>
+
+    <!-- 密碼驗證彈窗 -->
+    <div id="authModal" class="fixed inset-0 z-50 flex items-center justify-center p-6 hidden">
+        <div class="bg-slate-800 w-full max-w-xs p-8 rounded-3xl border border-slate-700 shadow-2xl text-center">
+            <h3 class="text-xl font-black mb-1 skw-gold italic">權限驗證</h3>
+            <p class="text-xs text-slate-400 mb-6">請輸入領袖管理密碼</p>
+            <input type="password" id="passInput" class="w-full bg-slate-900 border border-slate-700 p-4 rounded-xl text-center text-2xl tracking-[0.4em] mb-6 outline-none focus:border-yellow-500" placeholder="****">
+            <div class="flex gap-2">
+                <button onclick="closeAuthModal()" class="flex-1 py-3 text-slate-500 font-bold">取消</button>
+                <button onclick="verifyPassword()" class="flex-1 py-3 bg-yellow-500 text-slate-900 rounded-xl font-black">登入</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 核心資料 ---
+        const SIGNS = [
+            { id: 'straight', name: '向此方向走', draw: (ctx) => {
+                stick(ctx, 300, 500, 300, 150); 
+                stick(ctx, 300, 150, 240, 230); 
+                stick(ctx, 300, 150, 360, 230); 
+            }},
+            { id: 'left', name: '向左轉', draw: (ctx) => {
+                stick(ctx, 450, 300, 150, 300); 
+                stick(ctx, 150, 300, 230, 230); 
+                stick(ctx, 150, 300, 230, 370); 
+            }},
+            { id: 'right', name: '向右轉', draw: (ctx) => {
+                stick(ctx, 150, 300, 450, 300); 
+                stick(ctx, 450, 300, 370, 230); 
+                stick(ctx, 450, 300, 370, 370); 
+            }},
+            { id: 'obstacle', name: '前方有障礙', draw: (ctx) => {
+                stick(ctx, 150, 450, 300, 150);
+                stick(ctx, 300, 150, 450, 450);
+            }},
+            { id: 'steps', name: 'X 步後有信物', hasValue: true, hasDir: true, draw: (ctx, val, dir) => {
+                // 1. 畫圓圈步數 (靠下)
+                ctx.lineWidth = 15; ctx.strokeStyle = '#261b13';
+                ctx.beginPath(); ctx.arc(300, 380, 120, 0, Math.PI*2); ctx.stroke();
+                ctx.fillStyle = '#261b13'; ctx.font = "black 90px 'Noto Sans TC'";
+                ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                ctx.fillText(val || "0", 300, 385);
+
+                // 2. 畫指示方向的箭頭 (靠上)
+                const arrowY = 150;
+                if (dir === 'left') {
+                    stick(ctx, 400, arrowY, 200, arrowY); 
+                    stick(ctx, 200, arrowY, 260, arrowY-50);
+                    stick(ctx, 200, arrowY, 260, arrowY+50);
+                } else if (dir === 'right') {
+                    stick(ctx, 200, arrowY, 400, arrowY); 
+                    stick(ctx, 400, arrowY, 340, arrowY-50);
+                    stick(ctx, 400, arrowY, 340, arrowY+50);
+                } else { // straight
+                    stick(ctx, 300, 230, 300, 80); 
+                    stick(ctx, 300, 80, 250, 140);
+                    stick(ctx, 300, 80, 350, 140);
+                }
+            }},
+            { id: 'not_way', name: '此路不通', draw: (ctx) => {
+                stick(ctx, 150, 150, 450, 450); 
+                stick(ctx, 450, 150, 150, 450); 
+            }},
+            { id: 'danger', name: '有危險', draw: (ctx) => {
+                drawStone(ctx, 300, 200, 45); 
+                drawStone(ctx, 240, 340, 50);
+                drawStone(ctx, 360, 340, 48);
+            }},
+            { id: 'gone_home', name: '我已回中心', draw: (ctx) => {
+                ctx.lineWidth = 18; ctx.beginPath(); ctx.arc(300, 300, 160, 0, Math.PI*2); ctx.stroke();
+                ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(300, 300, 35, 0, Math.PI*2); ctx.fill();
+            }}
+        ];
+
+        let missions = JSON.parse(localStorage.getItem('skw_missions')) || [];
+        let userCoords = null;
+        let selectedSignIdx = 0;
+        let selectedStepDir = 'straight';
+        let isAdmin = false;
+        const canvas = document.getElementById('signCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // --- 權限管理 ---
+        function requestLeaderAccess() {
+            if (isAdmin) exitLeaderMode();
+            else document.getElementById('authModal').classList.remove('hidden');
+        }
+        function verifyPassword() {
+            if (document.getElementById('passInput').value === '1234') {
+                isAdmin = true;
+                document.getElementById('authModal').classList.add('hidden');
+                document.getElementById('leaderMode').classList.remove('hidden');
+                document.getElementById('scoutMode').classList.add('hidden');
+                document.getElementById('lockIcon').innerText = '🔓';
+                document.getElementById('modeIndicator').innerText = "Mode: Leader Deployment";
+                renderMissionList();
+            } else alert("密碼錯誤");
+            document.getElementById('passInput').value = '';
+        }
+        function exitLeaderMode() {
+            isAdmin = false;
+            document.getElementById('leaderMode').classList.add('hidden');
+            document.getElementById('scoutMode').classList.remove('hidden');
+            document.getElementById('lockIcon').innerText = '🔒';
+            document.getElementById('modeIndicator').innerText = "Mode: Scout Tracking";
+            updateScoutDisplay();
+        }
+        function closeAuthModal() { document.getElementById('authModal').classList.add('hidden'); }
+
+        // --- 領袖編輯功能 ---
+        function initSignSelectors() {
+            const grid = document.getElementById('signSelectorGrid');
+            grid.innerHTML = '';
+            SIGNS.forEach((sign, idx) => {
+                const btn = document.createElement('button');
+                btn.className = `p-3 rounded-xl text-[10px] font-bold border transition-all leading-tight ${selectedSignIdx === idx ? 'bg-yellow-500 border-yellow-500 text-slate-900 shadow-[0_0_15px_rgba(251,191,36,0.3)]' : 'bg-slate-900 border-slate-700 text-slate-500'}`;
+                btn.innerText = sign.name;
+                btn.onclick = () => { 
+                    selectedSignIdx = idx; 
+                    initSignSelectors();
+                    document.getElementById('stepExtraArea').classList.toggle('hidden', !sign.hasValue);
+                };
+                grid.appendChild(btn);
+            });
+        }
+
+        function setStepDir(dir) {
+            selectedStepDir = dir;
+            document.querySelectorAll('.dir-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`dir-${dir}`).classList.add('active');
+        }
+
+        function deployAtCurrentPos() {
+            if (!userCoords) return alert("請先啟動 GPS 以獲取定位");
+            const sign = SIGNS[selectedSignIdx];
+            const val = sign.hasValue ? document.getElementById('stepCount').value : null;
+            const dir = sign.hasDir ? selectedStepDir : null;
+            
+            missions.push({ 
+                lat: userCoords.lat, 
+                lng: userCoords.lng, 
+                signIdx: selectedSignIdx, 
+                signValue: val,
+                signDir: dir,
+                unlocked: false,
+                id: Date.now() 
+            });
+            saveMissions();
+            renderMissionList();
+            if (navigator.vibrate) navigator.vibrate(50);
+        }
+
+        function moveMission(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= missions.length) return;
+            const temp = missions[index];
+            missions[index] = missions[newIndex];
+            missions[newIndex] = temp;
+            saveMissions();
+            renderMissionList();
+        }
+
+        function removeM(i) { 
+            missions.splice(i,1); 
+            saveMissions(); 
+            renderMissionList(); 
+        }
+
+        function saveMissions() { localStorage.setItem('skw_missions', JSON.stringify(missions)); }
+        function clearAllMissions() { if(confirm("確定清空所有路徑？")){ missions=[]; saveMissions(); renderMissionList(); location.reload();} }
+
+        function renderMissionList() {
+            const list = document.getElementById('missionList');
+            list.innerHTML = '';
+            missions.forEach((m, idx) => {
+                const sign = SIGNS[m.signIdx];
+                let displayStr = sign.name;
+                if (m.signValue) displayStr = `${m.signValue} 步後 ${displayStr}`;
+                if (m.signDir) {
+                    const dirText = m.signDir === 'left' ? '左轉' : (m.signDir === 'right' ? '右轉' : '直行');
+                    displayStr = `(${dirText}) ${displayStr}`;
+                }
+
+                const div = document.createElement('div');
+                div.className = 'checkpoint-card p-4 rounded-2xl flex justify-between items-center shadow-lg';
+                div.innerHTML = `
+                    <div class="flex-grow">
+                        <div class='text-[10px] font-black skw-gold uppercase mb-1 tracking-widest'>#${idx+1} ${displayStr}</div>
+                        <div class='text-[8px] text-slate-500 font-mono'>GPS: ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="flex flex-col gap-1">
+                            <button onclick="moveMission(${idx}, -1)" class="text-[10px] bg-slate-700 px-2 py-1 rounded">▲</button>
+                            <button onclick="moveMission(${idx}, 1)" class="text-[10px] bg-slate-700 px-2 py-1 rounded">▼</button>
+                        </div>
+                        <button onclick='removeM(${idx})' class='bg-red-500/20 text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold'>×</button>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        // --- 繪圖邏輯 ---
+        function stick(ctx, x1, y1, x2, y2) { 
+            ctx.lineWidth = 16; ctx.strokeStyle = '#261b13'; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+            ctx.lineWidth = 6; ctx.strokeStyle = '#3d2b1f';
+            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+        }
+
+        function drawStone(ctx, x, y, r) {
+            ctx.fillStyle = '#64748b'; ctx.strokeStyle = '#334155'; ctx.lineWidth = 4;
+            ctx.beginPath();
+            for(let i=0; i<8; i++) {
+                const angle = (i/8) * Math.PI * 2;
+                const dist = r * (0.8 + Math.random() * 0.4);
+                const px = x + Math.cos(angle) * dist;
+                const py = y + Math.sin(angle) * dist;
+                if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+        }
+
+        function drawSign(idx, val, dir) { 
+            ctx.clearRect(0,0,600,600);
+            SIGNS[idx].draw(ctx, val, dir); 
+        }
+
+        // --- GPS 定位邏輯 ---
+        function getDist(la1, lo1, la2, lo2) {
+            const R = 6371e3;
+            const dLa = (la2-la1)*Math.PI/180; const dLo = (lo2-lo1)*Math.PI/180;
+            const a = Math.sin(dLa/2)**2 + Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function updatePosition(pos) {
+            userCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            document.getElementById('startGpsBtn').innerText = "🛰️ 偵測器已連線";
+            document.getElementById('startGpsBtn').classList.replace('bg-blue-600', 'bg-green-600');
+            updateScoutDisplay();
+        }
+
+        function updateScoutDisplay() {
+            if (!missions.length) return;
+            
+            const targetIndex = missions.findIndex(m => !m.unlocked);
+            const target = missions[targetIndex];
+            document.getElementById('progressText').innerText = `${missions.filter(m=>m.unlocked).length} / ${missions.length}`;
+            
+            if (target && userCoords) {
+                const dist = getDist(userCoords.lat, userCoords.lng, target.lat, target.lng);
+                document.getElementById('distDisplay').innerHTML = `${Math.round(dist)}<small class='text-sm ml-1 opacity-40'>m</small>`;
+                
+                if (dist < 15) { 
+                    target.unlocked = true; 
+                    saveMissions();
+                    if(navigator.vibrate) navigator.vibrate([200,100,200]); 
+                    document.getElementById('lockOverlay').classList.add('opacity-0', 'pointer-events-none');
+                    canvas.classList.remove('hidden-sign');
+                    document.getElementById('hintText').innerText = `到達目標 #${targetIndex+1}！`;
+                    drawSign(target.signIdx, target.signValue, target.signDir);
+                } else {
+                    document.getElementById('lockOverlay').classList.remove('opacity-0', 'pointer-events-none');
+                    canvas.classList.add('hidden-sign');
+                    document.getElementById('hintText').innerText = `請尋找第 ${targetIndex+1} 個號誌...`;
+                }
+            } else if (!target) {
+                document.getElementById('distDisplay').innerText = "FIN";
+                document.getElementById('hintText').innerText = "🏆 已完成所有追蹤點！";
+                document.getElementById('lockOverlay').classList.add('hidden');
+                canvas.classList.remove('hidden-sign');
+                const last = missions[missions.length-1];
+                drawSign(last.signIdx, last.signValue, last.signDir);
+            }
+        }
+
+        document.getElementById('startGpsBtn').onclick = () => {
+            navigator.geolocation.watchPosition(updatePosition, (e) => alert("GPS 權限被拒絕"), { enableHighAccuracy: true });
+        };
+
+        initSignSelectors();
+        updateScoutDisplay();
+    </script>
+</body>
+</html>
