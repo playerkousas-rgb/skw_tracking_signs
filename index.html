@@ -3,22 +3,60 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SKW GPS 追蹤系統 - 步數與方向增強版</title>
+    <title>SKW GPS 追蹤系統 - 雷達增強版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #0f172a; color: #f8fafc; overflow-x: hidden; }
+        
+        /* 動態雷達掃描動畫 */
+        .radar-container {
+            position: relative;
+            width: 240px;
+            height: 240px;
+            margin: 0 auto;
+            border: 2px solid rgba(34, 197, 94, 0.3);
+            border-radius: 50%;
+            background: radial-gradient(circle, #1e293b 0%, #0f172a 100%);
+            box-shadow: 0 0 30px rgba(34, 197, 94, 0.1);
+        }
         .radar-sweep {
+            position: absolute;
+            inset: 0;
             background: conic-gradient(from 0deg, rgba(34, 197, 94, 0.4) 0deg, transparent 90deg);
-            animation: sweep 3s linear infinite;
+            border-radius: 50%;
+            animation: sweep 4s linear infinite;
+        }
+        .radar-ring {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            border: 1px solid rgba(34, 197, 94, 0.1);
+            border-radius: 50%;
         }
         @keyframes sweep { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        
+        /* 目標點動畫 */
+        #targetDot {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background-color: #ef4444;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 15px #ef4444;
+            z-index: 30;
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
         .hidden-sign { filter: blur(45px); opacity: 0.1; transform: scale(0.8); }
         .skw-gold { color: #fbbf24; }
         .checkpoint-card { background: rgba(30, 41, 59, 0.8); border-left: 4px solid #fbbf24; transition: all 0.2s; }
         #authModal { background: rgba(15, 23, 42, 0.98); backdrop-filter: blur(10px); }
         canvas { image-rendering: pixelated; }
         .dir-btn.active { background-color: #fbbf24; color: #0f172a; border-color: #fbbf24; }
+        .zoom-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col p-4">
@@ -37,7 +75,7 @@
     <!-- 1. 隊員模式介面 -->
     <div id="scoutMode" class="max-w-md mx-auto w-full space-y-4">
         <div class="bg-slate-800 rounded-3xl p-6 shadow-2xl border border-slate-700 relative overflow-hidden">
-            <div class="flex justify-between items-start mb-4 relative z-10">
+            <div class="flex justify-between items-start mb-6 relative z-10">
                 <div>
                     <span class="text-[10px] font-bold text-slate-500 block uppercase tracking-widest">目標距離</span>
                     <span id="distDisplay" class="text-4xl font-black font-mono text-white tracking-tighter">---</span>
@@ -48,9 +86,23 @@
                 </div>
             </div>
 
-            <div class="w-20 h-20 mx-auto rounded-full border border-green-500/20 relative flex items-center justify-center mb-4">
-                <div class="absolute inset-0 radar-sweep rounded-full"></div>
-                <div class="w-2 h-2 bg-green-500 rounded-full animate-ping"></div>
+            <!-- 增強型大雷達 -->
+            <div class="radar-container mb-6">
+                <div class="radar-sweep"></div>
+                <div class="radar-ring w-full h-full"></div>
+                <div class="radar-ring w-2/3 h-2/3"></div>
+                <div class="radar-ring w-1/3 h-1/3"></div>
+                <!-- 中心點 (使用者) -->
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-blue-500 rounded-full border-2 border-white z-20"></div>
+                <!-- 目標點 (目標) -->
+                <div id="targetDot" style="display: none;"></div>
+            </div>
+
+            <!-- 縮放控制按鈕 -->
+            <div class="flex justify-center gap-2 mb-4 relative z-10">
+                <button onclick="setZoom(200)" id="zoom-200" class="zoom-btn px-4 py-1 rounded-full border border-slate-600 text-[10px] font-bold uppercase transition-all">遠程 (200m)</button>
+                <button onclick="setZoom(50)" id="zoom-50" class="zoom-btn active px-4 py-1 rounded-full border border-slate-600 text-[10px] font-bold uppercase transition-all">標準 (50m)</button>
+                <button onclick="setZoom(15)" id="zoom-15" class="zoom-btn px-4 py-1 rounded-full border border-slate-600 text-[10px] font-bold uppercase transition-all">精確 (15m)</button>
             </div>
 
             <div class="text-center relative z-10">
@@ -61,7 +113,7 @@
         <!-- 符號顯示區 -->
         <div class="relative h-[340px]">
             <div id="lockOverlay" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-900/90 backdrop-blur-xl rounded-3xl border-2 border-dashed border-slate-800 transition-all duration-700">
-                <span class="text-4xl mb-4 grayscale">📡</span>
+                <span class="text-4xl mb-4 grayscale text-white/50">📡</span>
                 <span class="text-xs font-bold tracking-[0.2em] text-slate-500 uppercase">等待進入目標範圍</span>
                 <p class="text-[10px] text-slate-600 mt-2">進入 15 米內將解鎖號誌</p>
             </div>
@@ -85,7 +137,6 @@
                     <label class="text-[10px] font-black text-slate-500 block mb-3 uppercase tracking-widest">選擇投放號誌</label>
                     <div class="grid grid-cols-2 gap-2 mb-4" id="signSelectorGrid"></div>
                     
-                    <!-- 步數與方向自定義區域 -->
                     <div id="stepExtraArea" class="hidden space-y-3 pt-2 border-t border-slate-700">
                         <div>
                             <label class="text-[10px] font-black text-yellow-500 block mb-2 uppercase tracking-widest">設定步數 (Steps)</label>
@@ -96,7 +147,7 @@
                             <div class="grid grid-cols-3 gap-2">
                                 <button onclick="setStepDir('left')" id="dir-left" class="dir-btn py-2 border border-slate-600 rounded-lg text-xs font-bold">向左</button>
                                 <button onclick="setStepDir('straight')" id="dir-straight" class="dir-btn active py-2 border border-slate-600 rounded-lg text-xs font-bold">向前</button>
-                                <button onclick="setStepDir('right')" id="dir-right" class="dir-btn py-2 border border-slate-600 rounded-lg text-xs font-bold">向右</button>
+                                <button onclick="setStepDir('right')" id="dir-right" class="dir-btn active py-2 border border-slate-600 rounded-lg text-xs font-bold">向右</button>
                             </div>
                         </div>
                     </div>
@@ -135,56 +186,33 @@
         // --- 核心資料 ---
         const SIGNS = [
             { id: 'straight', name: '向此方向走', draw: (ctx) => {
-                stick(ctx, 300, 500, 300, 150); 
-                stick(ctx, 300, 150, 240, 230); 
-                stick(ctx, 300, 150, 360, 230); 
+                stick(ctx, 300, 500, 300, 150); stick(ctx, 300, 150, 240, 230); stick(ctx, 300, 150, 360, 230); 
             }},
             { id: 'left', name: '向左轉', draw: (ctx) => {
-                stick(ctx, 450, 300, 150, 300); 
-                stick(ctx, 150, 300, 230, 230); 
-                stick(ctx, 150, 300, 230, 370); 
+                stick(ctx, 450, 300, 150, 300); stick(ctx, 150, 300, 230, 230); stick(ctx, 150, 300, 230, 370); 
             }},
             { id: 'right', name: '向右轉', draw: (ctx) => {
-                stick(ctx, 150, 300, 450, 300); 
-                stick(ctx, 450, 300, 370, 230); 
-                stick(ctx, 450, 300, 370, 370); 
+                stick(ctx, 150, 300, 450, 300); stick(ctx, 450, 300, 370, 230); stick(ctx, 450, 300, 370, 370); 
             }},
             { id: 'obstacle', name: '前方有障礙', draw: (ctx) => {
-                stick(ctx, 150, 450, 300, 150);
-                stick(ctx, 300, 150, 450, 450);
+                stick(ctx, 150, 450, 300, 150); stick(ctx, 300, 150, 450, 450);
             }},
             { id: 'steps', name: 'X 步後有信物', hasValue: true, hasDir: true, draw: (ctx, val, dir) => {
-                // 1. 畫圓圈步數 (靠下)
                 ctx.lineWidth = 15; ctx.strokeStyle = '#261b13';
                 ctx.beginPath(); ctx.arc(300, 380, 120, 0, Math.PI*2); ctx.stroke();
                 ctx.fillStyle = '#261b13'; ctx.font = "black 90px 'Noto Sans TC'";
                 ctx.textAlign = "center"; ctx.textBaseline = "middle";
                 ctx.fillText(val || "0", 300, 385);
-
-                // 2. 畫指示方向的箭頭 (靠上)
                 const arrowY = 150;
-                if (dir === 'left') {
-                    stick(ctx, 400, arrowY, 200, arrowY); 
-                    stick(ctx, 200, arrowY, 260, arrowY-50);
-                    stick(ctx, 200, arrowY, 260, arrowY+50);
-                } else if (dir === 'right') {
-                    stick(ctx, 200, arrowY, 400, arrowY); 
-                    stick(ctx, 400, arrowY, 340, arrowY-50);
-                    stick(ctx, 400, arrowY, 340, arrowY+50);
-                } else { // straight
-                    stick(ctx, 300, 230, 300, 80); 
-                    stick(ctx, 300, 80, 250, 140);
-                    stick(ctx, 300, 80, 350, 140);
-                }
+                if (dir === 'left') { stick(ctx, 400, arrowY, 200, arrowY); stick(ctx, 200, arrowY, 260, arrowY-50); stick(ctx, 200, arrowY, 260, arrowY+50); }
+                else if (dir === 'right') { stick(ctx, 200, arrowY, 400, arrowY); stick(ctx, 400, arrowY, 340, arrowY-50); stick(ctx, 400, arrowY, 340, arrowY+50); }
+                else { stick(ctx, 300, 230, 300, 80); stick(ctx, 300, 80, 250, 140); stick(ctx, 300, 80, 350, 140); }
             }},
             { id: 'not_way', name: '此路不通', draw: (ctx) => {
-                stick(ctx, 150, 150, 450, 450); 
-                stick(ctx, 450, 150, 150, 450); 
+                stick(ctx, 150, 150, 450, 450); stick(ctx, 450, 150, 150, 450); 
             }},
             { id: 'danger', name: '有危險', draw: (ctx) => {
-                drawStone(ctx, 300, 200, 45); 
-                drawStone(ctx, 240, 340, 50);
-                drawStone(ctx, 360, 340, 48);
+                drawStone(ctx, 300, 200, 45); drawStone(ctx, 240, 340, 50); drawStone(ctx, 360, 340, 48);
             }},
             { id: 'gone_home', name: '我已回中心', draw: (ctx) => {
                 ctx.lineWidth = 18; ctx.beginPath(); ctx.arc(300, 300, 160, 0, Math.PI*2); ctx.stroke();
@@ -197,6 +225,7 @@
         let selectedSignIdx = 0;
         let selectedStepDir = 'straight';
         let isAdmin = false;
+        let radarZoomRange = 50; // 預設雷達範圍 50 米
         const canvas = document.getElementById('signCanvas');
         const ctx = canvas.getContext('2d');
 
@@ -227,6 +256,14 @@
         }
         function closeAuthModal() { document.getElementById('authModal').classList.add('hidden'); }
 
+        // --- 雷達縮放控制 ---
+        function setZoom(range) {
+            radarZoomRange = range;
+            document.querySelectorAll('.zoom-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`zoom-${range}`).classList.add('active');
+            updateScoutDisplay();
+        }
+
         // --- 領袖編輯功能 ---
         function initSignSelectors() {
             const grid = document.getElementById('signSelectorGrid');
@@ -255,37 +292,19 @@
             const sign = SIGNS[selectedSignIdx];
             const val = sign.hasValue ? document.getElementById('stepCount').value : null;
             const dir = sign.hasDir ? selectedStepDir : null;
-            
-            missions.push({ 
-                lat: userCoords.lat, 
-                lng: userCoords.lng, 
-                signIdx: selectedSignIdx, 
-                signValue: val,
-                signDir: dir,
-                unlocked: false,
-                id: Date.now() 
-            });
-            saveMissions();
-            renderMissionList();
+            missions.push({ lat: userCoords.lat, lng: userCoords.lng, signIdx: selectedSignIdx, signValue: val, signDir: dir, unlocked: false, id: Date.now() });
+            saveMissions(); renderMissionList();
             if (navigator.vibrate) navigator.vibrate(50);
         }
 
         function moveMission(index, direction) {
             const newIndex = index + direction;
             if (newIndex < 0 || newIndex >= missions.length) return;
-            const temp = missions[index];
-            missions[index] = missions[newIndex];
-            missions[newIndex] = temp;
-            saveMissions();
-            renderMissionList();
+            const temp = missions[index]; missions[index] = missions[newIndex]; missions[newIndex] = temp;
+            saveMissions(); renderMissionList();
         }
 
-        function removeM(i) { 
-            missions.splice(i,1); 
-            saveMissions(); 
-            renderMissionList(); 
-        }
-
+        function removeM(i) { missions.splice(i,1); saveMissions(); renderMissionList(); }
         function saveMissions() { localStorage.setItem('skw_missions', JSON.stringify(missions)); }
         function clearAllMissions() { if(confirm("確定清空所有路徑？")){ missions=[]; saveMissions(); renderMissionList(); location.reload();} }
 
@@ -296,62 +315,39 @@
                 const sign = SIGNS[m.signIdx];
                 let displayStr = sign.name;
                 if (m.signValue) displayStr = `${m.signValue} 步後 ${displayStr}`;
-                if (m.signDir) {
-                    const dirText = m.signDir === 'left' ? '左轉' : (m.signDir === 'right' ? '右轉' : '直行');
-                    displayStr = `(${dirText}) ${displayStr}`;
-                }
-
+                if (m.signDir) displayStr = `(${m.signDir === 'left' ? '左轉' : (m.signDir === 'right' ? '右轉' : '直行')}) ${displayStr}`;
                 const div = document.createElement('div');
                 div.className = 'checkpoint-card p-4 rounded-2xl flex justify-between items-center shadow-lg';
-                div.innerHTML = `
-                    <div class="flex-grow">
-                        <div class='text-[10px] font-black skw-gold uppercase mb-1 tracking-widest'>#${idx+1} ${displayStr}</div>
-                        <div class='text-[8px] text-slate-500 font-mono'>GPS: ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}</div>
-                    </div>
-                    <div class="flex gap-2">
-                        <div class="flex flex-col gap-1">
-                            <button onclick="moveMission(${idx}, -1)" class="text-[10px] bg-slate-700 px-2 py-1 rounded">▲</button>
-                            <button onclick="moveMission(${idx}, 1)" class="text-[10px] bg-slate-700 px-2 py-1 rounded">▼</button>
-                        </div>
-                        <button onclick='removeM(${idx})' class='bg-red-500/20 text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold'>×</button>
-                    </div>
-                `;
+                div.innerHTML = `<div class="flex-grow"><div class='text-[10px] font-black skw-gold uppercase mb-1 tracking-widest'>#${idx+1} ${displayStr}</div><div class='text-[8px] text-slate-500 font-mono'>GPS: ${m.lat.toFixed(5)}, ${m.lng.toFixed(5)}</div></div><div class="flex gap-2"><div class="flex flex-col gap-1"><button onclick="moveMission(${idx}, -1)" class="text-[10px] bg-slate-700 px-2 py-1 rounded">▲</button><button onclick="moveMission(${idx}, 1)" class="text-[10px] bg-slate-700 px-2 py-1 rounded">▼</button></div><button onclick='removeM(${idx})' class='bg-red-500/20 text-red-500 w-10 h-10 rounded-full flex items-center justify-center font-bold'>×</button></div>`;
                 list.appendChild(div);
             });
         }
 
-        // --- 繪圖邏輯 ---
+        // --- 繪圖與 GPS 邏輯 ---
         function stick(ctx, x1, y1, x2, y2) { 
-            ctx.lineWidth = 16; ctx.strokeStyle = '#261b13'; ctx.lineCap = 'round';
-            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-            ctx.lineWidth = 6; ctx.strokeStyle = '#3d2b1f';
-            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+            ctx.lineWidth = 16; ctx.strokeStyle = '#261b13'; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+            ctx.lineWidth = 6; ctx.strokeStyle = '#3d2b1f'; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
         }
 
         function drawStone(ctx, x, y, r) {
-            ctx.fillStyle = '#64748b'; ctx.strokeStyle = '#334155'; ctx.lineWidth = 4;
-            ctx.beginPath();
-            for(let i=0; i<8; i++) {
-                const angle = (i/8) * Math.PI * 2;
-                const dist = r * (0.8 + Math.random() * 0.4);
-                const px = x + Math.cos(angle) * dist;
-                const py = y + Math.sin(angle) * dist;
-                if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-            }
+            ctx.fillStyle = '#64748b'; ctx.strokeStyle = '#334155'; ctx.lineWidth = 4; ctx.beginPath();
+            for(let i=0; i<8; i++) { const angle = (i/8) * Math.PI * 2; const dist = r * (0.8 + Math.random() * 0.4); const px = x + Math.cos(angle) * dist; const py = y + Math.sin(angle) * dist; if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py); }
             ctx.closePath(); ctx.fill(); ctx.stroke();
         }
 
-        function drawSign(idx, val, dir) { 
-            ctx.clearRect(0,0,600,600);
-            SIGNS[idx].draw(ctx, val, dir); 
-        }
+        function drawSign(idx, val, dir) { ctx.clearRect(0,0,600,600); SIGNS[idx].draw(ctx, val, dir); }
 
-        // --- GPS 定位邏輯 ---
         function getDist(la1, lo1, la2, lo2) {
             const R = 6371e3;
             const dLa = (la2-la1)*Math.PI/180; const dLo = (lo2-lo1)*Math.PI/180;
             const a = Math.sin(dLa/2)**2 + Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dLo/2)**2;
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function getBearing(la1, lo1, la2, lo2) {
+            const y = Math.sin((lo2-lo1)*Math.PI/180) * Math.cos(la2*Math.PI/180);
+            const x = Math.cos(la1*Math.PI/180) * Math.sin(la2*Math.PI/180) - Math.sin(la1*Math.PI/180) * Math.cos(la2*Math.PI/180) * Math.cos((lo2-lo1)*Math.PI/180);
+            return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
         }
 
         function updatePosition(pos) {
@@ -363,18 +359,37 @@
 
         function updateScoutDisplay() {
             if (!missions.length) return;
-            
             const targetIndex = missions.findIndex(m => !m.unlocked);
             const target = missions[targetIndex];
             document.getElementById('progressText').innerText = `${missions.filter(m=>m.unlocked).length} / ${missions.length}`;
             
             if (target && userCoords) {
                 const dist = getDist(userCoords.lat, userCoords.lng, target.lat, target.lng);
+                const bearing = getBearing(userCoords.lat, userCoords.lng, target.lat, target.lng);
+                
                 document.getElementById('distDisplay').innerHTML = `${Math.round(dist)}<small class='text-sm ml-1 opacity-40'>m</small>`;
                 
+                // 更新雷達上的目標點位置
+                const dot = document.getElementById('targetDot');
+                dot.style.display = 'block';
+                
+                // 計算點在雷達圖中的座標 (雷達半徑 120px)
+                // 將距離限制在目前縮放範圍內，如果超過範圍就顯示在邊緣
+                const visualDist = Math.min(dist, radarZoomRange);
+                const pixelDist = (visualDist / radarZoomRange) * 120;
+                
+                // 轉換角度 (航向角 0 度是北方，但在網頁坐標中 0 弧度是東方)
+                const angleRad = (bearing - 90) * Math.PI / 180;
+                const x = 120 + pixelDist * Math.cos(angleRad);
+                const y = 120 + pixelDist * Math.sin(angleRad);
+                
+                dot.style.left = `${x}px`;
+                dot.style.top = `${y}px`;
+                // 如果距離太遠，點變淡一點
+                dot.style.opacity = dist > radarZoomRange ? '0.4' : '1';
+
                 if (dist < 15) { 
-                    target.unlocked = true; 
-                    saveMissions();
+                    target.unlocked = true; saveMissions();
                     if(navigator.vibrate) navigator.vibrate([200,100,200]); 
                     document.getElementById('lockOverlay').classList.add('opacity-0', 'pointer-events-none');
                     canvas.classList.remove('hidden-sign');
@@ -388,10 +403,13 @@
             } else if (!target) {
                 document.getElementById('distDisplay').innerText = "FIN";
                 document.getElementById('hintText').innerText = "🏆 已完成所有追蹤點！";
+                document.getElementById('targetDot').style.display = 'none';
                 document.getElementById('lockOverlay').classList.add('hidden');
                 canvas.classList.remove('hidden-sign');
-                const last = missions[missions.length-1];
-                drawSign(last.signIdx, last.signValue, last.signDir);
+                if (missions.length) {
+                    const last = missions[missions.length-1];
+                    drawSign(last.signIdx, last.signValue, last.signDir);
+                }
             }
         }
 
