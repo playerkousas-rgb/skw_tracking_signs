@@ -202,7 +202,7 @@
                     <button onclick="points.splice(${i},1);window.saveLocal();" class="text-red-500 px-2 font-bold">✕</button>
                 </div>`).join('');
         };
-
+ 
         window.watchGPS = () => { 
             navigator.geolocation.watchPosition(p=>{userPos={lat:p.coords.latitude,lng:p.coords.longitude};refresh();},null,{enableHighAccuracy:true}); 
             document.getElementById('gpsBtn').innerText="📡 定位監控中"; 
