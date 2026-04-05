@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SKW 追蹤符號系統 - 童軍標準版</title>
+    <title>SKW 追蹤符號系統 - 領袖佈置版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .modal-blur { backdrop-filter: blur(8px); }
@@ -11,6 +11,7 @@
         .animate-slide-up { animation: slideUp 0.3s ease-out forwards; }
         .sign-card { transition: all 0.2s ease; }
         .sign-card:active { transform: scale(0.95); }
+        .is-locked { opacity: 0.5; pointer-events: none; grayscale: 1; }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     </style>
 </head>
@@ -51,7 +52,7 @@
         <div class="aspect-square bg-stone-950 rounded-[3.5rem] border-8 border-stone-800 shadow-2xl flex items-center justify-center relative overflow-hidden">
             <div class="absolute inset-0 opacity-10 pointer-events-none" style="background-image: radial-gradient(#fbbf24 1px, transparent 1px); background-size: 40px 40px;"></div>
             <canvas id="mainCanvas" width="600" height="600" class="w-full h-full p-16 relative z-10"></canvas>
-            <button onclick="window.nextStep()" class="absolute bottom-8 right-8 bg-amber-500 hover:bg-amber-400 text-black px-8 py-4 rounded-full font-black text-xs shadow-2xl active:scale-90 transition-all uppercase tracking-widest border-b-4 border-amber-700">
+            <button id="nextBtn" onclick="window.nextStep()" class="absolute bottom-8 right-8 bg-amber-500 hover:bg-amber-400 text-black px-8 py-4 rounded-full font-black text-xs shadow-2xl active:scale-90 transition-all uppercase tracking-widest border-b-4 border-amber-700">
                 完成此站 ➔
             </button>
         </div>
@@ -61,16 +62,19 @@
             <span>📡</span> 啟動追蹤儀器
         </button>
 
-        <!-- 領袖管理介面 (解鎖後顯示) -->
-        <div id="leader" class="mt-12 space-y-8 hidden animate-in fade-in slide-in-from-bottom-8 duration-500">
+        <!-- 領袖管理介面 -->
+        <div id="leader" class="mt-12 space-y-8 hidden animate-in fade-in slide-in-from-bottom-8 duration-500 pb-20">
             <div class="h-px bg-stone-700 w-full"></div>
-            <h3 class="text-amber-500 font-black uppercase tracking-[0.2em] text-sm flex items-center gap-3">
-                <span class="w-3 h-3 bg-amber-500 rounded-full animate-pulse shadow-[0_0_10px_#f59e0b]"></span>
-                領袖即時佈置面板
-            </h3>
+            <div class="flex justify-between items-center">
+                <h3 class="text-amber-500 font-black uppercase tracking-[0.2em] text-sm flex items-center gap-3">
+                    <span class="w-3 h-3 bg-amber-500 rounded-full animate-pulse shadow-[0_0_10px_#f59e0b]"></span>
+                    領袖佈置面板
+                </h3>
+                <button id="lockToggle" onclick="window.toggleLock()" class="text-[10px] bg-stone-800 px-4 py-2 rounded-full border border-stone-600 font-bold uppercase tracking-widest">鎖定路徑</button>
+            </div>
 
             <!-- 號誌選擇器 -->
-            <div class="grid grid-cols-3 gap-3">
+            <div id="editorControls" class="grid grid-cols-3 gap-3">
                 <button onclick="window.dropPoint('go')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">⬆️ 向前走</button>
                 <button onclick="window.dropPoint('left')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">⬅️ 向左轉</button>
                 <button onclick="window.dropPoint('right')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">➡️ 向右轉</button>
@@ -80,27 +84,32 @@
                 <button onclick="window.dropPoint('wait')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">⏸ 在此等待</button>
                 <button onclick="window.dropPoint('home')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">🏠 我已回中心</button>
                 <button onclick="window.dropPoint('block')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">⛰️ 前方障礙</button>
-                <button onclick="window.openStepModal()" class="sign-card bg-amber-900/20 border border-amber-600/30 p-4 rounded-2xl text-[10px] font-bold col-span-3">👣 X 步後有信物 (點擊設定)</button>
+                <button onclick="window.openStepModal()" class="sign-card bg-amber-900/20 border border-amber-600/30 p-4 rounded-2xl text-[10px] font-bold col-span-3">👣 X 步後有信物</button>
             </div>
 
             <!-- 路徑管理列表 -->
             <div class="bg-stone-800/50 rounded-3xl p-6 border border-stone-700">
-                <h4 class="text-stone-400 font-bold text-xs mb-4 uppercase tracking-widest">路徑點管理 (可調整順序)</h4>
-                <div id="pointList" class="space-y-2 max-h-60 overflow-y-auto pr-2">
-                    <!-- 動態渲染列表 -->
+                <div class="flex justify-between items-center mb-4">
+                    <h4 class="text-stone-400 font-bold text-xs uppercase tracking-widest">路徑站點明細 (點擊預覽)</h4>
+                    <span id="totalPoints" class="text-amber-500 font-mono text-xs font-bold">Total: 0</span>
                 </div>
+                <div id="pointList" class="space-y-2 max-h-80 overflow-y-auto pr-2">
+                    <!-- 列表 -->
+                </div>
+                
+                <button onclick="window.finishSetup()" class="w-full bg-green-700 hover:bg-green-600 py-4 rounded-2xl font-black mt-6 shadow-xl text-xs uppercase tracking-[0.2em]">✨ 佈置完成並發布路線</button>
             </div>
         </div>
 
         <button onclick="window.resetProg()" class="w-full text-[10px] text-stone-600 font-bold mt-10 uppercase tracking-[0.3em] hover:text-red-500 py-2">重置個人追蹤進度</button>
     </div>
 
-    <!-- 密碼輸入框 (自定義彈窗) -->
+    <!-- 驗證彈窗 -->
     <div id="authModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6 hidden">
         <div class="absolute inset-0 bg-black/80 modal-blur" onclick="window.closeAuthModal()"></div>
-        <div class="bg-stone-800 w-full max-w-xs p-8 rounded-[3rem] border border-stone-700 shadow-2xl relative z-10 animate-slide-up">
+        <div class="bg-stone-800 w-full max-w-xs p-8 rounded-[3rem] border border-stone-700 animate-slide-up">
             <h3 class="text-xl font-black text-center mb-6 text-amber-500">領袖權限驗證</h3>
-            <input id="authPass" type="password" placeholder="輸入領袖密碼" class="w-full bg-stone-900 p-4 rounded-2xl mb-4 border border-stone-700 text-center outline-none focus:border-amber-500 text-2xl font-bold tracking-widest">
+            <input id="authPass" type="password" placeholder="輸入密碼" class="w-full bg-stone-900 p-4 rounded-2xl mb-4 border border-stone-700 text-center outline-none focus:border-amber-500 text-2xl font-bold tracking-widest">
             <div class="flex gap-3">
                 <button onclick="window.closeAuthModal()" class="flex-1 bg-stone-700 py-4 rounded-2xl font-bold text-sm">取消</button>
                 <button onclick="window.verifyLeader()" class="flex-1 bg-amber-600 py-4 rounded-2xl font-bold text-sm">確認</button>
@@ -108,16 +117,15 @@
         </div>
     </div>
 
-    <!-- 步數輸入框 (自定義彈窗 - 解決 prompt 被擋問題) -->
+    <!-- 步數設定彈窗 -->
     <div id="stepModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6 hidden">
         <div class="absolute inset-0 bg-black/80 modal-blur" onclick="window.closeStepModal()"></div>
-        <div class="bg-stone-800 w-full max-w-xs p-8 rounded-[3rem] border border-stone-700 shadow-2xl relative z-10 animate-slide-up">
-            <h3 class="text-xl font-black text-center mb-2 text-amber-500 italic">信物步數設定</h3>
-            <p class="text-center text-stone-500 text-[10px] mb-6 uppercase tracking-widest font-bold">X 步後有信物</p>
-            <input id="stepCount" type="number" value="20" class="w-full bg-stone-900 p-4 rounded-2xl mb-6 border border-stone-700 text-center outline-none focus:border-amber-500 text-4xl font-black tracking-tighter">
+        <div class="bg-stone-800 w-full max-w-xs p-8 rounded-[3rem] border border-stone-700 animate-slide-up">
+            <h3 class="text-xl font-black text-center mb-2 text-amber-500">信物步數設定</h3>
+            <input id="stepCount" type="number" value="20" class="w-full bg-stone-900 p-4 rounded-2xl mb-6 border border-stone-700 text-center text-4xl font-black outline-none focus:border-amber-500">
             <div class="flex gap-3">
                 <button onclick="window.closeStepModal()" class="flex-1 bg-stone-700 py-4 rounded-2xl font-bold text-sm">取消</button>
-                <button onclick="window.submitSteps()" class="flex-1 bg-amber-600 py-4 rounded-2xl font-bold text-sm">完成佈置</button>
+                <button onclick="window.submitSteps()" class="flex-1 bg-amber-600 py-4 rounded-2xl font-bold text-sm">完成</button>
             </div>
         </div>
     </div>
@@ -127,128 +135,14 @@
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
 
-        // --- 全域變數 ---
-        let db, auth, appId, unsubscribe = null;
-        let points = [], userPos = null, currentUser = null;
-        let missionId = localStorage.getItem('active_mission_id') || "";
+        let db, auth, appId, unsubscribe = null, isLocked = false;
+        let points = [], userPos = null, currentUser = null, missionId = localStorage.getItem('active_mission_id') || "";
+        const canvas = document.getElementById('mainCanvas'), ctx = canvas.getContext('2d');
 
-        const canvas = document.getElementById('mainCanvas');
-        const ctx = canvas.getContext('2d');
-
-        // --- 1. 權限與彈窗邏輯 ---
-        window.openAuthModal = () => document.getElementById('authModal').classList.remove('hidden');
-        window.closeAuthModal = () => {
-            document.getElementById('authModal').classList.add('hidden');
-            document.getElementById('authPass').value = "";
-        };
-
-        window.verifyLeader = () => {
-            if (document.getElementById('authPass').value === "1234") {
-                document.getElementById('leader').classList.remove('hidden');
-                document.getElementById('leaderBtn').innerHTML = "🔓";
-                document.getElementById('leaderBtn').classList.replace('bg-stone-700', 'bg-amber-600');
-                window.closeAuthModal();
-                updatePointListUI();
-                setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 300);
-            } else { alert("密碼錯誤 (預設 1234)"); }
-        };
-
-        // --- 步數彈窗處理 ---
-        window.openStepModal = () => {
-            if (!userPos) return alert("等待 GPS 定位後才能佈置標記點");
-            document.getElementById('stepModal').classList.remove('hidden');
-        };
-        window.closeStepModal = () => document.getElementById('stepModal').classList.add('hidden');
-        window.submitSteps = () => {
-            const val = document.getElementById('stepCount').value;
-            window.dropPoint('steps', val);
-            window.closeStepModal();
-        };
-
-        // --- 2. 路徑點排序與儲存 ---
-        window.movePoint = async (index, direction) => {
-            const newIndex = index + direction;
-            if (newIndex < 0 || newIndex >= points.length) return;
-            const temp = points[index];
-            points[index] = points[newIndex];
-            points[newIndex] = temp;
-            await savePointsToCloud();
-        };
-
-        window.deletePoint = async (index) => {
-            if (confirm("確定刪除此標記點？")) {
-                points.splice(index, 1);
-                await savePointsToCloud();
-            }
-        };
-
-        const savePointsToCloud = async () => {
-            if (!db || !missionId) return;
-            try {
-                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'missions', missionId), {
-                    points: points,
-                    lastUpdated: Date.now()
-                });
-            } catch (e) { console.error("Cloud Save Error:", e); }
-        };
-
-        function updatePointListUI() {
-            const container = document.getElementById('pointList');
-            if (!container) return;
-            container.innerHTML = points.map((p, i) => `
-                <div class="flex items-center justify-between bg-stone-900 p-3 rounded-xl border border-stone-700/50">
-                    <div class="flex items-center gap-3">
-                        <span class="text-[10px] text-stone-600 font-mono">#${i+1}</span>
-                        <span class="text-xs font-bold text-stone-300 uppercase">${p.type === 'steps' ? p.val+' 步標記' : p.type}</span>
-                    </div>
-                    <div class="flex gap-1">
-                        <button onclick="window.movePoint(${i}, -1)" class="w-8 h-8 bg-stone-800 rounded-lg text-[10px] shadow-sm active:bg-amber-500">▲</button>
-                        <button onclick="window.movePoint(${i}, 1)" class="w-8 h-8 bg-stone-800 rounded-lg text-[10px] shadow-sm active:bg-amber-500">▼</button>
-                        <button onclick="window.deletePoint(${i})" class="w-8 h-8 bg-red-900/20 text-red-500 rounded-lg text-[10px] shadow-sm">✕</button>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // --- 3. 童軍標誌繪製 ---
-        const s = (c, x1, y1, x2, y2) => {
-            c.lineCap = 'round';
-            c.lineWidth = 26; c.strokeStyle = '#78350f'; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
-            c.lineWidth = 18; c.strokeStyle = '#f59e0b'; c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
-        };
-
-        const SIGNS = {
-            'go': (c) => { s(c,300,520,300,80); s(c,300,80,220,180); s(c,300,80,380,180); },
-            'left': (c) => { s(c,520,300,80,300); s(c,80,300,180,220); s(c,80,300,180,380); },
-            'right': (c) => { s(c,80,300,520,300); s(c,520,300,420,220); s(c,520,300,420,380); },
-            'wrong': (c) => { s(c,150,150,450,450); s(c,450,150,150,450); },
-            'danger': (c) => {
-                const stone = (x,y,r) => {
-                    c.fillStyle='#57534e'; c.beginPath();
-                    for(let i=0;i<6;i++){ let a=i*Math.PI/3; let dr=r*(0.8+Math.random()*0.4); c.lineTo(x+Math.cos(a)*dr, y+Math.sin(a)*dr); }
-                    c.closePath(); c.fill();
-                };
-                stone(300,200,60); stone(220,380,60); stone(380,380,60);
-            },
-            'split': (c) => { s(c,300,520,300,300); s(c,300,300,150,150); s(c,300,300,450,150); },
-            'wait': (c) => { s(c,150,200,450,200); s(c,150,300,450,300); s(c,150,400,450,400); },
-            'home': (c) => {
-                c.lineWidth=20; c.strokeStyle='#f59e0b'; c.beginPath(); c.arc(300,300,180,0,Math.PI*2); c.stroke();
-                c.fillStyle='#f59e0b'; c.beginPath(); c.arc(300,300,30,0,Math.PI*2); c.fill();
-            },
-            'block': (c) => { s(c,100,450,300,150); s(c,300,150,500,450); },
-            'steps': (c, v) => {
-                c.lineWidth=15; c.strokeStyle='#f59e0b'; c.beginPath(); c.arc(300,300,150,0,Math.PI*2); c.stroke();
-                c.fillStyle='#f59e0b'; c.font="900 120px sans-serif"; c.textAlign="center"; c.fillText(v||"0", 300, 345);
-                s(c,300,140,300,40); 
-            }
-        };
-
-        // --- 4. 初始化 ---
+        // --- 核心邏輯 ---
         window.joinMission = () => {
             const val = document.getElementById('mi').value.toUpperCase().trim();
-            if(!val) return;
-            missionId = val;
+            if(!val) return; missionId = val;
             localStorage.setItem('active_mission_id', missionId);
             document.getElementById('setup').classList.add('hidden');
             document.getElementById('app').classList.remove('hidden');
@@ -257,91 +151,122 @@
         };
 
         window.dropPoint = async (type, val = null) => {
+            if (isLocked) return alert("路徑已鎖定，請先解除鎖定再編輯。");
             if (!userPos) return alert("等待 GPS...");
-            points.push({ lat: userPos.lat, lng: userPos.lng, type, val });
+            points.push({ lat: userPos.lat, lng: userPos.lng, type, val, timestamp: Date.now() });
             await savePointsToCloud();
-            alert("✅ 標記已部署");
         };
 
-        window.watchGPS = () => {
-            navigator.geolocation.watchPosition(p => {
-                userPos = { lat: p.coords.latitude, lng: p.coords.longitude };
-                refresh();
-            }, e => console.error(e), { enableHighAccuracy: true });
-            document.getElementById('gpsBtn').innerText = "🛰️ 定位跟蹤中...";
-            document.getElementById('gpsBtn').classList.replace('bg-blue-600', 'bg-green-700');
+        window.finishSetup = () => {
+            if (points.length === 0) return alert("尚未新增任何站點！");
+            window.toggleLock(true);
+            alert(`🎉 發布成功！\n路徑 ID: ${missionId}\n總站數: ${points.length}\n小隊員現在可以開始追蹤了。`);
         };
 
-        window.nextStep = () => {
-            const p = parseInt(localStorage.getItem(`p_${missionId}`) || "0");
-            if (p < points.length) { localStorage.setItem(`p_${missionId}`, p + 1); refresh(); }
+        window.toggleLock = (force) => {
+            isLocked = typeof force === 'boolean' ? force : !isLocked;
+            document.getElementById('editorControls').classList.toggle('is-locked', isLocked);
+            document.getElementById('lockToggle').innerText = isLocked ? "🔓 解除鎖定" : "🔒 鎖定路徑";
+            document.getElementById('lockToggle').classList.toggle('bg-red-900/40', isLocked);
         };
+
+        window.previewPoint = (index) => {
+            const p = points[index];
+            ctx.clearRect(0,0,600,600);
+            if(SIGNS[p.type]) SIGNS[p.type](ctx, p.val);
+            document.getElementById('statusMsg').innerText = `預覽第 ${index+1} 站號誌`;
+        };
+
+        // --- Firebase 操作 ---
+        const savePointsToCloud = async () => {
+            if (!db || !missionId) return;
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'missions', missionId), { points, isLocked, lastUpdated: Date.now() });
+        };
+
+        function startListening() {
+            if(unsubscribe) unsubscribe();
+            unsubscribe = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'missions', missionId), snap => {
+                if(snap.exists()){ 
+                    const data = snap.data();
+                    points = data.points || [];
+                    isLocked = data.isLocked || false;
+                    updateUIState();
+                    refresh();
+                }
+            });
+        }
+
+        function updateUIState() {
+            document.getElementById('totalPoints').innerText = `Total: ${points.length}`;
+            document.getElementById('pointList').innerHTML = points.map((p, i) => `
+                <div onclick="window.previewPoint(${i})" class="flex items-center justify-between bg-stone-900 p-3 rounded-xl border border-stone-700/50 cursor-pointer hover:bg-stone-800 transition-colors">
+                    <div class="flex items-center gap-3">
+                        <span class="text-[10px] text-amber-500 font-mono font-bold">站點 ${i+1}</span>
+                        <span class="text-xs font-bold text-stone-200 uppercase">${p.type === 'steps' ? p.val+'步後有信物' : getTypeName(p.type)}</span>
+                    </div>
+                    <div class="flex gap-1" onclick="event.stopPropagation()">
+                        <button onclick="window.movePoint(${i}, -1)" class="w-8 h-8 bg-stone-800 rounded-lg text-[10px]">▲</button>
+                        <button onclick="window.movePoint(${i}, 1)" class="w-8 h-8 bg-stone-800 rounded-lg text-[10px]">▼</button>
+                        <button onclick="window.deletePoint(${i})" class="w-8 h-8 bg-red-900/20 text-red-500 rounded-lg text-[10px]">✕</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function getTypeName(type) {
+            const names = { 'go':'向前走', 'left':'向左轉', 'right':'向右轉', 'wrong':'不通', 'danger':'危險', 'split':'分頭', 'wait':'等待', 'home':'中心', 'block':'障礙' };
+            return names[type] || type;
+        }
+
+        // --- 繪圖與導航邏輯 (其餘保持原樣) ---
+        const s=(c,x1,y1,x2,y2)=>{c.lineCap='round';c.lineWidth=26;c.strokeStyle='#78350f';c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();c.lineWidth=18;c.strokeStyle='#f59e0b';c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();};
+        const SIGNS={'go':(c)=>{s(c,300,520,300,80);s(c,300,80,220,180);s(c,300,80,380,180);},'left':(c)=>{s(c,520,300,80,300);s(c,80,300,180,220);s(c,80,300,180,380);},'right':(c)=>{s(c,80,300,520,300);s(c,520,300,420,220);s(c,520,300,420,380);},'wrong':(c)=>{s(c,150,150,450,450);s(c,450,150,150,450);},'danger':(c)=>{const st=(x,y,r)=>{c.fillStyle='#57534e';c.beginPath();for(let i=0;i<6;i++){let a=i*Math.PI/3;let dr=r*(0.8+Math.random()*0.4);c.lineTo(x+Math.cos(a)*dr,y+Math.sin(a)*dr);}c.closePath();c.fill();};st(300,200,60);st(220,380,60);st(380,380,60);},'split':(c)=>{s(c,300,520,300,300);s(c,300,300,150,150);s(c,300,300,450,150);},'wait':(c)=>{s(c,150,200,450,200);s(c,150,300,450,300);s(c,150,400,450,400);},'home':(c)=>{c.lineWidth=20;c.strokeStyle='#f59e0b';c.beginPath();c.arc(300,300,180,0,Math.PI*2);c.stroke();c.fillStyle='#f59e0b';c.beginPath();c.arc(300,300,30,0,Math.PI*2);c.fill();},'block':(c)=>{s(c,100,450,300,150);s(c,300,150,500,450);},'steps':(c,v)=>{c.lineWidth=15;c.strokeStyle='#f59e0b';c.beginPath();c.arc(300,300,150,0,Math.PI*2);c.stroke();c.fillStyle='#f59e0b';c.font="900 120px sans-serif";c.textAlign="center";c.fillText(v||"0",300,345);s(c,300,140,300,40);}};
 
         function refresh() {
-            const progress = parseInt(localStorage.getItem(`p_${missionId}`) || "0");
-            document.getElementById('prog').innerText = `${progress} / ${points.length}`;
-            updatePointListUI();
-
+            const pIndex = parseInt(localStorage.getItem(`p_${missionId}`) || "0");
+            document.getElementById('prog').innerText = `${pIndex} / ${points.length}`;
             if (!userPos || points.length === 0) return;
-            const target = points[progress];
-            if (!target) {
-                document.getElementById('statusMsg').innerText = "🏁 完成所有追蹤！";
-                ctx.clearRect(0,0,600,600);
-                return;
-            }
-
+            const target = points[pIndex];
+            if (!target) { document.getElementById('statusMsg').innerText = "🏁 抵達終點！"; ctx.clearRect(0,0,600,600); return; }
             const dist = getD(userPos.lat, userPos.lng, target.lat, target.lng);
             document.getElementById('debugDist').innerText = `距離標記點: ${Math.round(dist)}M`;
-
             if (dist <= 15) {
                 ctx.clearRect(0,0,600,600);
                 if(SIGNS[target.type]) SIGNS[target.type](ctx, target.val);
-                document.getElementById('statusMsg').innerText = "📍 找到信號了！";
+                document.getElementById('statusMsg').innerText = "📍 找到號誌了！";
                 document.getElementById('statusMsg').className = "text-amber-500 font-black animate-pulse";
             } else {
                 ctx.clearRect(0,0,600,600);
-                document.getElementById('statusMsg').innerText = dist < 40 ? "🔥 訊號增強！" : "🔍 尋找下一個號誌...";
-                document.getElementById('statusMsg').className = "text-stone-400";
+                document.getElementById('statusMsg').innerText = dist < 40 ? "🔥 訊號強烈" : "🔍 搜尋路徑中...";
+                document.getElementById('statusMsg').className = "text-stone-400 font-bold";
             }
         }
 
-        // --- 5. Firebase ---
+        function getD(la1,lo1,la2,lo2){const R=6371e3,f1=la1*Math.PI/180,f2=la2*Math.PI/180,df=(la2-la1)*Math.PI/180,dl=(lo2-lo1)*Math.PI/180,a=Math.sin(df/2)**2+Math.cos(f1)*Math.cos(f2)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
+
+        window.openAuthModal = () => document.getElementById('authModal').classList.remove('hidden');
+        window.closeAuthModal = () => document.getElementById('authModal').classList.add('hidden');
+        window.verifyLeader = () => { if(document.getElementById('authPass').value==="1234"){ document.getElementById('leader').classList.remove('hidden'); window.closeAuthModal(); } else alert("密碼錯誤"); };
+        window.openStepModal = () => document.getElementById('stepModal').classList.remove('hidden');
+        window.closeStepModal = () => document.getElementById('stepModal').classList.add('hidden');
+        window.submitSteps = () => { window.dropPoint('steps', document.getElementById('stepCount').value); window.closeStepModal(); };
+        window.watchGPS = () => { navigator.geolocation.watchPosition(p=>{userPos={lat:p.coords.latitude,lng:p.coords.longitude};refresh();}); document.getElementById('gpsBtn').innerText="📡 定位運作中"; };
+        window.nextStep = () => { const p = parseInt(localStorage.getItem(`p_${missionId}`)||"0"); if(p<points.length){ localStorage.setItem(`p_${missionId}`, p+1); refresh(); } };
+        window.resetProg = () => { if(confirm("重置進度？")){ localStorage.setItem(`p_${missionId}`,0); location.reload(); } };
+        window.movePoint = async (i, d) => { const n=i+d; if(n>=0&&n<points.length){ [points[i],points[n]]=[points[n],points[i]]; await savePointsToCloud(); } };
+        window.deletePoint = async (i) => { if(confirm("刪除？")){ points.splice(i,1); await savePointsToCloud(); } };
+        window.exitMission = () => { if(confirm("離開？")){ localStorage.removeItem('active_mission_id'); location.reload(); } };
+
+        // 初始化 Firebase
         try {
             const firebaseConfig = JSON.parse(__firebase_config);
             const app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
+            auth = getAuth(app); db = getFirestore(app);
             appId = typeof __app_id !== 'undefined' ? __app_id : 'skw-v2';
-
-            onAuthStateChanged(auth, u => {
-                currentUser = u;
-                if(u && missionId) startListening();
-            });
-
-            const init = async () => {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else { await signInAnonymously(auth); }
-            };
-            init();
+            onAuthStateChanged(auth, u => { currentUser = u; if(u && missionId) startListening(); });
+            const initAuth = async () => { if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token); else await signInAnonymously(auth); };
+            initAuth();
         } catch (e) { console.error(e); }
-
-        function startListening() {
-            if(!db || !missionId) return;
-            if(unsubscribe) unsubscribe();
-            unsubscribe = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'missions', missionId), snap => {
-                if(snap.exists()){ points = snap.data().points || []; refresh(); }
-            });
-        }
-
-        function getD(la1,lo1,la2,lo2){
-            const R=6371e3, f1=la1*Math.PI/180, f2=la2*Math.PI/180, df=(la2-la1)*Math.PI/180, dl=(lo2-lo1)*Math.PI/180;
-            const a=Math.sin(df/2)**2+Math.cos(f1)*Math.cos(f2)*Math.sin(dl/2)**2;
-            return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-        }
-
-        window.exitMission = () => { if(confirm("退出？")) { localStorage.removeItem('active_mission_id'); location.reload(); } };
-        window.resetProg = () => { if(confirm("重置？")) { localStorage.setItem(`p_${missionId}`, 0); location.reload(); } };
         window.onload = () => { if(missionId) window.joinMission(); };
     </script>
 </body>
