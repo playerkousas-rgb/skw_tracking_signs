@@ -2,118 +2,109 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SKW 追蹤系統 - 領袖增強版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SKW 追蹤系統 - 領袖實戰版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .modal-blur { backdrop-filter: blur(8px); }
-        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        .animate-slide-up { animation: slideUp 0.3s ease-out forwards; }
-        .sign-card { transition: all 0.2s ease; cursor: pointer; }
-        .sign-card:active { transform: scale(0.95); }
-        .is-locked { opacity: 0.5; pointer-events: none; grayscale: 1; }
+        @keyframes flash { 0% { background: rgba(245,158,11,0.5); } 100% { background: transparent; } }
+        .flash-effect { animation: flash 0.2s ease-out; }
+        .sign-card { transition: all 0.1s ease; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+        .sign-card:active { transform: scale(0.9); background: #444; }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .radar-glow { box-shadow: 0 0 15px rgba(245, 158, 11, 0.3); }
     </style>
 </head>
 <body class="bg-stone-900 text-stone-100 min-h-screen font-sans select-none overflow-x-hidden">
 
     <div id="setup" class="p-10 text-center flex flex-col items-center justify-center min-h-screen">
-        <h1 class="text-4xl font-black text-amber-500 mb-2 tracking-tighter italic">SKW TRACKING</h1>
-        <p class="text-stone-500 mb-12 uppercase tracking-[0.3em] text-[10px] font-bold">本地離線同步版本</p>
+        <h1 class="text-5xl font-black text-amber-500 mb-2 tracking-tighter italic">SKW TRACKING</h1>
+        <p class="text-stone-500 mb-12 uppercase tracking-[0.3em] text-[10px] font-bold">追蹤符號定位系統</p>
         <div class="max-w-xs w-full space-y-4">
-            <input id="mi" type="text" placeholder="輸入路徑 ID" class="w-full bg-stone-800 p-5 rounded-2xl border border-stone-700 text-center uppercase font-black text-2xl outline-none focus:border-amber-500 transition-all shadow-inner">
-            <button onclick="window.joinMission()" class="w-full bg-amber-600 hover:bg-amber-500 py-5 rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-all">進入路徑</button>
+            <input id="mi" type="text" placeholder="輸入頻道 ID" class="w-full bg-stone-800 p-5 rounded-2xl border border-stone-700 text-center uppercase font-black text-2xl outline-none focus:border-amber-500 transition-all shadow-inner">
+            <button onclick="window.joinMission()" class="w-full bg-amber-600 hover:bg-amber-500 py-5 rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-all">開啟儀器</button>
         </div>
     </div>
 
     <div id="app" class="hidden p-4 max-w-md mx-auto pb-32">
-        <div class="flex justify-between items-center mb-6 bg-stone-800/90 p-4 rounded-3xl border border-stone-700 backdrop-blur-xl sticky top-4 z-40 shadow-2xl">
-            <div class="pl-2">
-                <span class="text-[10px] text-stone-500 block uppercase font-bold tracking-widest">Local Mode</span>
+        <div class="flex justify-between items-center mb-4 bg-stone-800/90 p-4 rounded-3xl border border-stone-700 backdrop-blur-xl sticky top-4 z-40 shadow-2xl">
+            <div>
+                <span id="accuracyDisp" class="text-[9px] text-stone-500 block uppercase font-bold tracking-widest">定位搜尋中...</span>
                 <h2 id="cid" class="text-xl font-black text-amber-500 tracking-widest uppercase italic">---</h2>
             </div>
             <div class="flex gap-2">
-                <button onclick="window.openAuthModal()" class="w-12 h-12 flex items-center justify-center bg-stone-700 rounded-2xl border border-stone-600 shadow-lg text-lg hover:bg-stone-600 transition-colors">🛠️</button>
-                <button onclick="window.exitMission()" class="w-12 h-12 flex items-center justify-center bg-stone-700 rounded-2xl text-stone-400 border border-stone-600 shadow-lg">✕</button>
+                <button onclick="window.openAuthModal()" class="w-12 h-12 flex items-center justify-center bg-stone-700 rounded-2xl border border-stone-600 shadow-lg text-lg">🛠️</button>
+                <button onclick="window.exitMission()" class="w-12 h-12 flex items-center justify-center bg-stone-700 rounded-2xl text-stone-400 border border-stone-600">✕</button>
             </div>
         </div>
 
-        <div class="bg-stone-800 rounded-[2rem] p-6 mb-4 text-center border border-stone-700 shadow-xl relative">
+        <div class="bg-stone-800 rounded-[2rem] p-5 mb-4 text-center border border-stone-700 shadow-xl relative overflow-hidden">
             <div id="prog" class="absolute top-4 right-6 text-[10px] text-amber-500 font-mono font-bold bg-black/40 px-3 py-1 rounded-full">0/0</div>
-            <div id="statusMsg" class="text-lg mb-2 italic h-12 flex items-center justify-center font-bold text-stone-300">請啟動定位</div>
-            <div id="debugDist" class="text-[9px] text-stone-500 font-mono tracking-[0.3em] uppercase">WAITING GPS...</div>
+            <div id="statusMsg" class="text-lg mb-1 italic h-10 flex items-center justify-center font-bold text-stone-300">請啟動定位儀</div>
+            <div id="debugDist" class="text-[10px] text-stone-500 font-mono tracking-widest uppercase">WAITING GPS...</div>
         </div>
 
-        <div class="aspect-square bg-stone-950 rounded-[3.5rem] border-8 border-stone-800 shadow-2xl flex items-center justify-center relative overflow-hidden">
-            <canvas id="mainCanvas" width="600" height="600" class="w-full h-full p-16 z-10"></canvas>
-            <button onclick="window.nextStep()" class="absolute bottom-8 right-8 bg-amber-500 text-black px-8 py-4 rounded-full font-black text-xs shadow-2xl active:scale-90 transition-all uppercase tracking-widest border-b-4 border-amber-700">完成此站 ➔</button>
+        <div class="aspect-square bg-stone-950 rounded-[3rem] border-8 border-stone-800 shadow-2xl flex items-center justify-center relative overflow-hidden radar-glow">
+            <canvas id="mainCanvas" width="600" height="600" class="w-full h-full p-12 z-10"></canvas>
+            <button onclick="window.nextStep()" class="absolute bottom-6 right-6 bg-amber-500 text-black px-6 py-3 rounded-full font-black text-xs shadow-2xl active:scale-90 transition-all uppercase border-b-4 border-amber-700">下一站 ➔</button>
         </div>
 
-        <button id="gpsBtn" onclick="window.watchGPS()" class="w-full bg-blue-600 py-6 rounded-3xl font-black mt-8 shadow-xl active:scale-95 transition-all tracking-[0.4em] text-sm border-b-4 border-blue-800">📡 啟動追蹤儀器</button>
+        <button id="gpsBtn" onclick="window.watchGPS()" class="w-full bg-blue-600 py-6 rounded-3xl font-black mt-6 shadow-xl active:scale-95 transition-all tracking-[0.4em] text-sm border-b-4 border-blue-800">📡 啟動定位監控</button>
 
-        <div id="leader" class="mt-12 space-y-8 hidden animate-slide-up pb-20">
+        <div id="leader" class="mt-8 space-y-6 hidden animate-slide-up pb-20">
             <div class="h-px bg-stone-700 w-full"></div>
             <div class="flex justify-between items-center">
-                <h3 class="text-amber-500 font-black uppercase tracking-[0.2em] text-sm">領袖工具面板</h3>
-                <button id="lockToggle" onclick="window.toggleLock()" class="text-[10px] bg-stone-800 px-4 py-2 rounded-full border border-stone-600 font-bold uppercase tracking-widest">🔒 鎖定路徑</button>
+                <h3 class="text-amber-500 font-black uppercase tracking-[0.2em] text-sm">領袖投放工具</h3>
+                <button id="lockToggle" onclick="window.toggleLock()" class="text-[10px] bg-stone-800 px-4 py-2 rounded-full border border-stone-600 font-bold">🔒 鎖定路徑</button>
             </div>
 
-            <div id="editorControls" class="grid grid-cols-3 gap-3">
+            <div id="editorControls" class="grid grid-cols-3 gap-2">
                 <button onclick="window.dropPoint('go')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">⬆️走</button>
                 <button onclick="window.dropPoint('left')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">⬅️左</button>
                 <button onclick="window.dropPoint('right')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">➡️右</button>
-                <button onclick="window.dropPoint('wrong')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">❌錯</button>
-                <button onclick="window.dropPoint('danger')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">⚠️危</button>
+                <button onclick="window.dropPoint('wrong')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold text-red-400">❌錯</button>
+                <button onclick="window.dropPoint('danger')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold text-orange-400">⚠️危</button>
                 <button onclick="window.dropPoint('split')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">🔱分</button>
                 <button onclick="window.dropPoint('wait')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">⏸等</button>
                 <button onclick="window.dropPoint('home')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">🏠家</button>
                 <button onclick="window.dropPoint('block')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">⛰️障</button>
-                <button onclick="window.openStepModal()" class="sign-card bg-amber-900/20 border border-amber-600/30 p-4 rounded-2xl text-[10px] font-bold col-span-3">👣 X 步後有信物</button>
+                <button onclick="window.openStepModal()" class="sign-card bg-amber-900/20 border border-amber-600/30 p-4 rounded-2xl text-[10px] font-bold col-span-3">👣 投放信物步數</button>
             </div>
 
-            <div class="bg-stone-800/50 rounded-3xl p-6 border border-stone-700">
+            <div class="bg-stone-800/50 rounded-3xl p-5 border border-stone-700">
                 <div class="flex justify-between items-center mb-4">
-                    <h4 class="text-stone-500 font-bold text-[10px] uppercase tracking-widest">路徑站點明細</h4>
-                    <button onclick="window.clearCurrentPoints()" class="text-red-500 text-[10px] font-black border border-red-900/30 px-3 py-1 rounded-full bg-red-900/10 hover:bg-red-900/30 transition-all">🚨 一鍵清空</button>
+                    <h4 class="text-stone-500 font-bold text-[10px] uppercase">已投放點位</h4>
+                    <button onclick="window.clearCurrentPoints()" class="text-red-500 text-[10px] font-black border border-red-900/30 px-3 py-1 rounded-full">🚨 清空</button>
                 </div>
-                <div id="pointList" class="space-y-2 max-h-60 overflow-y-auto pr-2 text-xs"></div>
-            </div>
-
-            <div id="rootTools" class="mt-8 pt-8 border-t border-stone-700 space-y-4 hidden">
-                <p class="text-[10px] text-stone-500 font-bold uppercase tracking-widest text-center">超級管理員備份與抹除</p>
-                <div class="flex gap-3">
-                    <button onclick="window.exportMissionJSON()" class="flex-1 bg-stone-700 py-4 rounded-2xl text-xs font-bold border border-stone-600 active:bg-amber-600 transition-colors">📤 導出 JSON</button>
-                    <button onclick="window.importMissionJSON()" class="flex-1 bg-stone-700 py-4 rounded-2xl text-xs font-bold border border-stone-600 active:bg-amber-600 transition-colors">📥 導入 JSON</button>
-                </div>
-                <button onclick="window.purgeEverything()" class="w-full bg-red-900/30 text-red-500 py-4 rounded-2xl text-[10px] font-black border border-red-900/50 hover:bg-red-900/50 transition-all">🚨 抹除此機「所有」頻道數據</button>
+                <div id="pointList" class="space-y-2 max-h-48 overflow-y-auto pr-2 text-xs"></div>
             </div>
         </div>
     </div>
 
     <div id="authModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6 hidden">
         <div class="absolute inset-0 bg-black/80 modal-blur" onclick="window.closeAuthModal()"></div>
-        <div class="bg-stone-800 w-full max-w-xs p-8 rounded-[3rem] border border-stone-700 animate-slide-up shadow-2xl text-center">
-            <h3 class="text-xl font-black mb-6 text-amber-500">權限驗證</h3>
-            <input id="authPass" type="password" placeholder="輸入密碼" class="w-full bg-stone-900 p-4 rounded-2xl mb-4 border border-stone-700 text-center outline-none text-2xl font-bold tracking-widest focus:border-amber-500">
-            <button onclick="window.verifyLeader()" class="w-full bg-amber-600 py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-all">驗證</button>
+        <div class="bg-stone-800 w-full max-w-xs p-8 rounded-[3rem] border border-stone-700 relative text-center">
+            <h3 class="text-xl font-black mb-6 text-amber-500">領袖驗證</h3>
+            <input id="authPass" type="password" placeholder="PASSWORD" class="w-full bg-stone-900 p-4 rounded-2xl mb-4 border border-stone-700 text-center outline-none text-2xl font-bold tracking-widest">
+            <button onclick="window.verifyLeader()" class="w-full bg-amber-600 py-4 rounded-2xl font-bold">驗證登入</button>
         </div>
     </div>
 
     <div id="stepModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6 hidden">
         <div class="absolute inset-0 bg-black/80 modal-blur" onclick="window.closeStepModal()"></div>
-        <div class="bg-stone-800 w-full max-w-xs p-8 rounded-[3rem] border border-stone-700 animate-slide-up text-center">
+        <div class="bg-stone-800 w-full max-w-xs p-8 rounded-[3rem] border border-stone-700 relative text-center">
             <h3 class="text-xl font-black mb-2 text-amber-500 italic">信物步數</h3>
-            <input id="stepCount" type="number" value="20" class="w-full bg-stone-900 p-4 rounded-2xl mb-6 border border-stone-700 text-center text-4xl font-black outline-none focus:border-amber-500">
-            <button onclick="window.submitSteps()" class="w-full bg-amber-600 py-4 rounded-2xl font-bold text-sm active:scale-95 transition-all">確認佈置</button>
+            <input id="stepCount" type="number" value="20" class="w-full bg-stone-900 p-4 rounded-2xl mb-6 border border-stone-700 text-center text-4xl font-black outline-none">
+            <button onclick="window.submitSteps()" class="w-full bg-amber-600 py-4 rounded-2xl font-bold">確認</button>
         </div>
     </div>
 
     <script>
-        const STORAGE_KEY = 'skw_tracker_v2_local';
+        const STORAGE_KEY = 'skw_tracker_v3_integrated';
         const s=(c,x1,y1,x2,y2)=>{c.lineCap='round';c.lineWidth=26;c.strokeStyle='#78350f';c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();c.lineWidth=18;c.strokeStyle='#f59e0b';c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();};
         const SIGNS={'go':(c)=>{s(c,300,520,300,80);s(c,300,80,220,180);s(c,300,80,380,180);},'left':(c)=>{s(c,520,300,80,300);s(c,80,300,180,220);s(c,80,300,180,380);},'right':(c)=>{s(c,80,300,520,300);s(c,520,300,420,220);s(c,520,300,420,380);},'wrong':(c)=>{s(c,150,150,450,450);s(c,450,150,150,450);},'danger':(c)=>{const st=(x,y,r)=>{c.fillStyle='#57534e';c.beginPath();for(let i=0;i<6;i++){let a=i*Math.PI/3;let dr=r*(0.8+Math.random()*0.4);c.lineTo(x+Math.cos(a)*dr,y+Math.sin(a)*dr);}c.closePath();c.fill();};st(300,200,60);st(220,380,60);st(380,380,60);},'split':(c)=>{s(c,300,520,300,300);s(c,300,300,150,150);s(c,300,300,450,150);},'wait':(c)=>{s(c,150,200,450,200);s(c,150,300,450,300);s(c,150,400,450,400);},'home':(c)=>{c.lineWidth=20;c.strokeStyle='#f59e0b';c.beginPath();c.arc(300,300,180,0,Math.PI*2);c.stroke();c.fillStyle='#f59e0b';c.beginPath();c.arc(300,300,30,0,Math.PI*2);c.fill();},'block':(c)=>{s(c,100,450,300,150);s(c,300,150,500,450);},'steps':(c,v)=>{c.lineWidth=15;c.strokeStyle='#f59e0b';c.beginPath();c.arc(300,300,150,0,Math.PI*2);c.stroke();c.fillStyle='#f59e0b';c.font="900 120px sans-serif";c.textAlign="center";c.fillText(v||"0",300,345);s(c,300,140,300,40);}};
 
-        let missionId="", points=[], isLocked=false, userPos=null;
+        let missionId="", points=[], isLocked=false, userPos=null, currentAccuracy=0;
         let allMissions = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
         const canvas = document.getElementById('mainCanvas'), ctx = canvas.getContext('2d');
 
@@ -129,31 +120,30 @@
             updateUIState(); refresh();
         };
 
-        window.verifyLeader = () => {
-            const p = document.getElementById('authPass').value;
-            if(p==="0728" || p==="1201") {
-                document.getElementById('leader').classList.remove('hidden');
-                document.getElementById('rootTools').classList.toggle('hidden', p!=="1201");
-                window.closeAuthModal();
-            } else alert("密碼錯誤");
-        };
-
-        window.clearCurrentPoints = () => {
-            if(confirm(`確定要清空當前頻道【${missionId}】的所有站點嗎？\n此動作無法還原。`)) {
-                points = [];
-                localStorage.setItem(`p_${missionId}`, 0); // 重置進度
-                window.saveLocal();
+        window.watchGPS = () => {
+            navigator.geolocation.watchPosition(p => {
+                userPos = { lat: p.coords.latitude, lng: p.coords.longitude };
+                currentAccuracy = p.coords.accuracy;
+                const accDisp = document.getElementById('accuracyDisp');
+                accDisp.innerText = `精準度: ±${currentAccuracy.toFixed(1)}M`;
+                accDisp.style.color = currentAccuracy < 10 ? '#39ff14' : (currentAccuracy > 20 ? '#ff4444' : '#f59e0b');
                 refresh();
-                alert("🗑️ 已清空頻道點位。");
-            }
+            }, null, { enableHighAccuracy: true, maximumAge: 0 });
+            document.getElementById('gpsBtn').innerText = "📡 定位監控中";
+            document.getElementById('gpsBtn').classList.replace('bg-blue-600', 'bg-green-700');
         };
 
-        window.purgeEverything = () => {
-            if(confirm("🚨 警告：這將徹底抹除這台手機上『所有』頻道的資料！\n確定要執行全域重置嗎？")) {
-                localStorage.clear();
-                alert("🗑️ 手機數據已徹底抹除。");
-                location.reload();
-            }
+        window.dropPoint = (t, v=null) => {
+            if(isLocked) return alert("路徑已鎖定");
+            if(!userPos) return alert("等待 GPS 訊號...");
+            
+            // 投放提示感
+            if(navigator.vibrate) navigator.vibrate(80);
+            document.getElementById('app').classList.add('flash-effect');
+            setTimeout(()=>document.getElementById('app').classList.remove('flash-effect'), 200);
+
+            points.push({lat:userPos.lat, lng:userPos.lng, type:t, val:v, acc:currentAccuracy});
+            window.saveLocal();
         };
 
         window.saveLocal = () => {
@@ -162,61 +152,59 @@
             updateUIState();
         };
 
-        window.dropPoint = (t, v=null) => {
-            if(isLocked) return alert("路徑已鎖定");
-            if(!userPos) return alert("等待 GPS 訊號...");
-            points.push({lat:userPos.lat, lng:userPos.lng, type:t, val:v});
-            window.saveLocal();
-        };
-
-        window.exportMissionJSON = () => {
-            navigator.clipboard.writeText(JSON.stringify({missionId, points, isLocked})).then(()=>alert("JSON 資料已複製！"));
-        };
-
-        window.importMissionJSON = () => {
-            try {
-                const d = JSON.parse(prompt("請貼上 JSON 字串："));
-                if(d.points) { points=d.points; isLocked=d.isLocked; window.saveLocal(); refresh(); alert("數據導入成功！"); }
-            } catch(e) { alert("格式錯誤！"); }
-        };
-
         function refresh() {
             const pIdx = parseInt(localStorage.getItem(`p_${missionId}`)||"0");
             document.getElementById('prog').innerText = `${pIdx}/${points.length}`;
             if(!userPos || points.length===0) { ctx.clearRect(0,0,600,600); return; }
             const t = points[pIdx];
             if(!t) { document.getElementById('statusMsg').innerText="🏁 抵達終點"; ctx.clearRect(0,0,600,600); return; }
+            
             const dist = getD(userPos.lat, userPos.lng, t.lat, t.lng);
-            document.getElementById('debugDist').innerText = `${Math.round(dist)}M`;
+            document.getElementById('debugDist').innerText = `距離目標: ${Math.round(dist)}M`;
+            
             ctx.clearRect(0,0,600,600);
-            if(dist<=15) { if(SIGNS[t.type]) SIGNS[t.type](ctx, t.val); document.getElementById('statusMsg').innerText="📍 發現號誌"; }
-            else { document.getElementById('statusMsg').innerText="🔍 搜尋中"; }
+            if(dist <= 12) { // 觸發範圍設定為 12 公尺
+                if(SIGNS[t.type]) SIGNS[t.type](ctx, t.val); 
+                document.getElementById('statusMsg').innerText="📍 發現追蹤符號";
+                document.getElementById('statusMsg').classList.add('text-amber-500');
+            } else { 
+                document.getElementById('statusMsg').innerText="🔍 搜尋符號中..."; 
+                document.getElementById('statusMsg').classList.remove('text-amber-500');
+            }
         }
 
-        function getD(la1,lo1,la2,lo2){const R=6371e3,f1=la1*Math.PI/180,f2=la2*Math.PI/180,df=(la2-la1)*Math.PI/180,dl=(lo2-lo1)*Math.PI/180,a=Math.sin(df/2)**2+Math.cos(f1)*Math.cos(f2)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
-        
+        function getD(la1,lo1,la2,lo2){
+            const R=6371e3,f1=la1*Math.PI/180,f2=la2*Math.PI/180,df=(la2-la1)*Math.PI/180,dl=(lo2-lo1)*Math.PI/180;
+            const a=Math.sin(df/2)**2+Math.cos(f1)*Math.cos(f2)*Math.sin(dl/2)**2;
+            return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+        }
+
         window.updateUIState = () => {
             document.getElementById('pointList').innerHTML = points.map((p,i)=>`
                 <div class="flex justify-between items-center p-3 bg-stone-900 mb-2 rounded-xl border border-stone-700/50">
-                    <span class="font-mono text-amber-500">${i+1}. ${p.type}</span>
-                    <button onclick="points.splice(${i},1);window.saveLocal();" class="text-red-500 px-2 font-bold">✕</button>
+                    <span class="font-mono text-amber-500">${i+1}. ${p.type.toUpperCase()} <small class="text-stone-600">(±${p.acc ? p.acc.toFixed(0) : '?'})</small></span>
+                    <button onclick="points.splice(${i},1);window.saveLocal();" class="text-red-500 px-2 font-bold text-lg">✕</button>
                 </div>`).join('');
         };
- 
-        window.watchGPS = () => { 
-            navigator.geolocation.watchPosition(p=>{userPos={lat:p.coords.latitude,lng:p.coords.longitude};refresh();},null,{enableHighAccuracy:true}); 
-            document.getElementById('gpsBtn').innerText="📡 定位監控中"; 
-            document.getElementById('gpsBtn').classList.replace('bg-blue-600', 'bg-green-700');
+
+        window.verifyLeader = () => {
+            const p = document.getElementById('authPass').value;
+            if(p==="0728" || p==="1201") {
+                document.getElementById('leader').classList.remove('hidden');
+                window.closeAuthModal();
+            } else alert("密碼錯誤");
         };
+
         window.nextStep = () => { const p = parseInt(localStorage.getItem(`p_${missionId}`)||"0"); if(p<points.length){ localStorage.setItem(`p_${missionId}`, p+1); refresh(); } };
         window.toggleLock = () => { isLocked=!isLocked; document.getElementById('lockToggle').innerText = isLocked ? "🔓 解除鎖定" : "🔒 鎖定路徑"; window.saveLocal(); };
-        window.exitMission = () => { if(confirm("退出？")) location.reload(); };
+        window.exitMission = () => { if(confirm("確定退出儀器？")) location.reload(); };
+        window.clearCurrentPoints = () => { if(confirm("確定清空此頻道所有符號？")) { points=[]; window.saveLocal(); refresh(); } };
         window.openAuthModal = () => document.getElementById('authModal').classList.remove('hidden');
         window.closeAuthModal = () => document.getElementById('authModal').classList.add('hidden');
         window.openStepModal = () => document.getElementById('stepModal').classList.remove('hidden');
         window.closeStepModal = () => document.getElementById('stepModal').classList.add('hidden');
         window.submitSteps = () => { window.dropPoint('steps', document.getElementById('stepCount').value); window.closeStepModal(); };
-        window.onload = () => { if(localStorage.getItem('last_id')) { document.getElementById('mi').value = localStorage.getItem('last_id'); } };
+        window.onload = () => { if(localStorage.getItem('last_id')) document.getElementById('mi').value = localStorage.getItem('last_id'); };
     </script>
 </body>
 </html>
