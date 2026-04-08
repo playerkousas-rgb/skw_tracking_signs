@@ -21,8 +21,8 @@
 <body class="bg-stone-900 text-stone-100 min-h-screen font-sans select-none overflow-x-hidden" oncontextmenu="return false;">
     <div id="setup" class="p-10 text-center flex flex-col items-center justify-center min-h-screen">
         <h1 class="text-4xl font-black text-amber-500 mb-2 tracking-tighter italic">SKW TRACKING</h1>
-        <p class="text-stone-500 mb-8 uppercase tracking-[0.3em] text-[10px] font-bold">本地離線同步版本 v5.0（預設5米＋領袖可調）</p>
-      
+        <p class="text-stone-500 mb-8 uppercase tracking-[0.3em] text-[10px] font-bold">本地離線同步版本 v5.2（廣東話語音導航）</p>
+       
         <div class="max-w-xs w-full space-y-4">
             <input id="mi" type="text" placeholder="輸入路徑 ID" class="w-full bg-stone-800 p-5 rounded-2xl border border-stone-700 text-center uppercase font-black text-2xl outline-none focus:border-amber-500 transition-all shadow-inner">
             <button onclick="window.joinMission()" class="w-full bg-amber-600 hover:bg-amber-500 py-5 rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-all">進入路徑</button>
@@ -72,7 +72,6 @@
                 <button onclick="window.dropPoint('block')" class="sign-card bg-stone-800 border border-stone-700 p-4 rounded-2xl text-[10px] font-bold">⛰️障</button>
                 <button onclick="window.openStepModal()" class="sign-card bg-amber-900/20 border border-amber-600/30 p-4 rounded-2xl text-[10px] font-bold col-span-3">👣 X 步後有信物</button>
             </div>
-            <!-- GPS 距離調整器（領袖專用） -->
             <div class="bg-stone-900 rounded-3xl p-5 border border-stone-700">
                 <div class="flex justify-between items-center mb-3">
                     <h4 class="text-stone-400 font-bold text-sm uppercase tracking-widest">GPS 觸發距離</h4>
@@ -105,7 +104,6 @@
         </div>
     </div>
 
-    <!-- Modal 保持不變 -->
     <div id="authModal" class="fixed inset-0 z-[100] flex items-center justify-center p-6 hidden">
         <div class="absolute inset-0 bg-black/80 modal-blur" onclick="window.closeAuthModal()"></div>
         <div class="bg-stone-800 w-full max-w-xs p-8 rounded-[3rem] border border-stone-700 animate-slide-up shadow-2xl text-center">
@@ -157,16 +155,34 @@
         let triggerDistance = 5;
         let missionId="", points=[], isLocked=false, userPos=null;
         let allMissions = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+        let lastSpokenIndex = -1;   // 用來防止重複語音
+
         const canvas = document.getElementById('mainCanvas'), ctx = canvas.getContext('2d');
+
+        // ==================== 廣東話語音函數 ====================
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'yue-HK';     // 香港廣東話
+                utterance.rate = 1.08;         // 語速
+                utterance.pitch = 1.0;
+                speechSynthesis.cancel();
+                speechSynthesis.speak(utterance);
+            }
+        }
 
         window.joinMission = () => {
             missionId = document.getElementById('mi').value.toUpperCase().trim();
             if(!missionId) return;
             localStorage.setItem('last_id', missionId);
             const data = allMissions[missionId] || {points:[], isLocked:false, triggerDistance:5};
-            points = (data.points || []).map(p => ({...p, sequential: p.sequential !== undefined ? p.sequential : !NON_SEQ_TYPES.has(p.type)}));
+            points = (data.points || []).map(p => ({
+                ...p,
+                sequential: p.sequential !== undefined ? p.sequential : !NON_SEQ_TYPES.has(p.type)
+            }));
             isLocked = data.isLocked || false;
             triggerDistance = data.triggerDistance || 5;
+            lastSpokenIndex = -1;
             document.getElementById('setup').classList.add('hidden');
             document.getElementById('app').classList.remove('hidden');
             document.getElementById('cid').innerText = missionId;
@@ -227,6 +243,7 @@
                     isLocked = d.isLocked || false;
                     triggerDistance = d.triggerDistance || 5;
                 }
+                lastSpokenIndex = -1;
                 window.saveLocal();
                 refresh();
                 alert(append ? "已成功追加點位！" : "已成功覆蓋數據！");
@@ -269,6 +286,7 @@
                 return;
             }
 
+            // 自由觸發的陷阱
             let triggeredHazard = null;
             let minDistHazard = Infinity;
             for(const pt of points){
@@ -285,16 +303,32 @@
 
             if(triggeredHazard){
                 if(SIGNS[triggeredHazard.type]) SIGNS[triggeredHazard.type](ctx, triggeredHazard.val);
-                let label = triggeredHazard.type === 'wrong' ? '錯路' : triggeredHazard.type === 'danger' ? '危險' : '分岔';
+                let label = triggeredHazard.type === 'wrong' ? '錯路' : 
+                           triggeredHazard.type === 'danger' ? '危險' : '分岔';
                 document.getElementById('statusMsg').innerText = `⚠️ 發現${label}`;
                 document.getElementById('debugDist').innerText = `陷阱 ${Math.round(minDistHazard)}M`;
+
+                let hazardText = "注意！發現錯路";
+                if (triggeredHazard.type === 'danger') hazardText = "注意！發現危險區域";
+                if (triggeredHazard.type === 'split') hazardText = "注意！前面有分岔";
+                
+                if (lastSpokenIndex !== -100) {
+                    speak(hazardText);
+                    lastSpokenIndex = -100;
+                }
                 return;
             }
 
+            // 主路徑
             if(pIdx >= seqPoints.length){
                 document.getElementById('statusMsg').innerText="🏁 抵達終點";
+                if (lastSpokenIndex !== -999) {
+                    speak("恭喜！已到達終點");
+                    lastSpokenIndex = -999;
+                }
                 return;
             }
+
             const t = seqPoints[pIdx];
             const dist = getD(userPos.lat, userPos.lng, t.lat, t.lng);
             document.getElementById('debugDist').innerText = `${Math.round(dist)}M`;
@@ -302,6 +336,11 @@
             if(dist <= triggerDistance){
                 if(SIGNS[t.type]) SIGNS[t.type](ctx, t.val);
                 document.getElementById('statusMsg').innerText="📍 發現號誌";
+
+                if (pIdx !== lastSpokenIndex) {
+                    speak(`已到達第 ${pIdx + 1} 站，請跟住號誌指示`);
+                    lastSpokenIndex = pIdx;
+                }
             } else {
                 document.getElementById('statusMsg').innerText="🔍 搜尋中";
             }
@@ -322,7 +361,7 @@
         window.nextStep=()=>{const p=parseInt(localStorage.getItem(`p_${missionId}`)||"0");localStorage.setItem(`p_${missionId}`,p+1);refresh();};
         window.toggleLock=()=>{isLocked=!isLocked;document.getElementById('lockToggle').innerText=isLocked?"🔓 解除鎖定":"🔒 鎖定路徑";window.saveLocal();};
         window.exitMission=()=>{if(confirm("退出？"))location.reload();};
-        window.clearCurrentPoints=()=>{if(confirm("清空？")){points=[];localStorage.setItem(`p_${missionId}`,0);window.saveLocal();refresh();}};
+        window.clearCurrentPoints=()=>{if(confirm("清空？")){points=[];localStorage.setItem(`p_${missionId}`,0);lastSpokenIndex=-1;window.saveLocal();refresh();}};
         window.purgeEverything=()=>{if(confirm("抹除所有頻道？")){localStorage.clear();location.reload();}};
         window.exportMissionJSON=()=>{navigator.clipboard.writeText(JSON.stringify({missionId,points,isLocked,triggerDistance})).then(()=>alert("JSON 複製成功"));};
         window.openAuthModal=()=>document.getElementById('authModal').classList.remove('hidden');
@@ -333,6 +372,7 @@
         window.closeStepModal=()=>document.getElementById('stepModal').classList.add('hidden');
         window.closeQRModal=()=>document.getElementById('qrModal').classList.add('hidden');
         window.submitSteps=()=>{window.dropPoint('steps',document.getElementById('stepCount').value);window.closeStepModal();};
+
         window.onload=()=>{if(localStorage.getItem('last_id'))document.getElementById('mi').value=localStorage.getItem('last_id');};
     </script>
 </body>
